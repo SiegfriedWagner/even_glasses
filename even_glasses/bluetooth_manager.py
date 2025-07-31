@@ -202,7 +202,7 @@ class GlassesManager:
             else None
         )
 
-    async def scan_and_connect(self, timeout: int = 10) -> bool:
+    async def scan_and_connect(self, timeout: float = 10) -> bool:
         """Scan for glasses devices and connect to them."""
         try:
             logger.info("Scanning for glasses devices...")
