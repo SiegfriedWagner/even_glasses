@@ -1,3 +1,5 @@
+from turtledemo.penrose import start
+
 from even_glasses.models import (
     SendResult,
     ScreenAction,
@@ -52,8 +54,7 @@ async def send_text_packet(
     page_number: int = 1,
     max_pages: int = 1,
     screen_status: int = ScreenAction.NEW_CONTENT | AIStatus.DISPLAYING,
-    wait: float = 2,
-    delay: float = 0.4,
+    wait: float | None = 0.4,
     seq: int = 0,
 ) -> str:
     text_bytes = text_message.encode("utf-8")
@@ -74,10 +75,12 @@ async def send_text_packet(
     if manager.left_glass and manager.right_glass:
         # Send to the left glass and wait for acknowledgment
         await manager.left_glass.send(ai_result_command)
-        await asyncio.sleep(delay)
+        if wait:
+            await asyncio.sleep(wait)
         # Send to the right glass and wait for acknowledgment
         await manager.right_glass.send(ai_result_command)
-        await asyncio.sleep(delay)
+        if wait:
+            await asyncio.sleep(wait)
 
         return text_message
     else:
@@ -85,7 +88,7 @@ async def send_text_packet(
         return False
 
 
-async def send_text(manager, text_message: str, duration: float = 5) -> str:
+async def send_text(manager, text_message: str, duration: float = 5, delay: float = 0.0) -> str:
     """Send text message to the glasses display."""
     lines = format_text_lines(text_message)
     total_pages = (len(lines) + 4) // 5  # 5 lines per page
@@ -99,8 +102,8 @@ async def send_text(manager, text_message: str, duration: float = 5) -> str:
             page_number=1,
             max_pages=total_pages,
             screen_status=screen_status,
+            wait=delay
         )
-        await asyncio.sleep(0.1)
 
     for pn, page in enumerate(range(0, len(lines), 5), start=1):
         page_lines = lines[page : page + 5]
@@ -121,6 +124,7 @@ async def send_text(manager, text_message: str, duration: float = 5) -> str:
             page_number=pn,
             max_pages=total_pages,
             screen_status=screen_status,
+            wait=delay
         )
 
         # Wait after sending each page except the last one
@@ -135,8 +139,8 @@ async def send_text(manager, text_message: str, duration: float = 5) -> str:
         page_number=total_pages,
         max_pages=total_pages,
         screen_status=screen_status,
+        wait=delay
     )
-
     return text_message
 
 
@@ -308,7 +312,12 @@ async def apply_glasses_wear(manager, status: GlassesWearStatus):
         log_message=f"Glasses wear detection set to {status.name}."
     )
 
+
+
 async def send_image(manager, image_data: bytes):
+    import time
+    start = time.time()
+    print("Started sending image.")
     """Send image data to the glasses using optimized functions."""
     # Divide image data into packets using NumPy
     packets_array = divide_image_data(image_data)
@@ -321,11 +330,19 @@ async def send_image(manager, image_data: bytes):
 
     # Concatenate image data for CRC
     full_image_array = np.concatenate(packets_array)
+    # send data to both glasses at the same time
+    print(f"Finished preprocessing image data after: {time.time() - start} seconds.")
+    if manager.left_glass and manager.right_glass and False:
+        await asyncio.gather(
+            send_data_to_glass(manager.left_glass, data_packets, full_image_array),
+            send_data_to_glass(manager.right_glass, data_packets, full_image_array),
+        )
+    else:
+        # Send data to left glass only
+        if manager.left_glass:
+            await send_data_to_glass(manager.left_glass, data_packets, full_image_array)
 
-    # Send data to left glass first
-    if manager.left_glass:
-        await send_data_to_glass(manager.left_glass, data_packets, full_image_array)
-
-    # Send data to right glass after acknowledgment from left
-    if manager.right_glass:
-        await send_data_to_glass(manager.right_glass, data_packets, full_image_array)
+        # Send data to right glass only
+        if manager.right_glass:
+            await send_data_to_glass(manager.right_glass, data_packets, full_image_array)
+    print(f"Sending data to both glass took: {time.time() - start} seconds.")

@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import time
+
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 from typing import Optional, Callable
@@ -39,7 +41,6 @@ class BleDevice:
             logger.info(f"Connected to {self.name}")
 
             # Discover services
-            await self.client.get_services()
             services = self.client.services
 
             uart_service = services.get_service(UART_SERVICE_UUID)
@@ -106,6 +107,7 @@ class BleDevice:
                 logger.error(f"Failed to start notifications for {self.name}: {e}")
 
     async def send(self, data: bytes) -> bool:
+        start = time.perf_counter()
         if not self.client.is_connected:
             logger.warning(f"Cannot send data, {self.name} is disconnected.")
             return False
@@ -113,11 +115,13 @@ class BleDevice:
         if not self.uart_tx:
             logger.warning(f"No TX characteristic available for {self.name}.")
             return False
+        if len(data) > 253:
+            raise ValueError("Message too long, payload must be at most 253 bytes long.")
 
         try:
             async with self._write_lock:
                 await self.client.write_gatt_char(self.uart_tx, data, response=True)
-            logger.info(f"Data sent to {self.name}: {data.hex()}")
+            logger.info(f"Data sent to {self.name}, took {time.perf_counter() - start}[s], data[{len(data)}]: {data.hex()}")
             return True
         except Exception as e:
             logger.error(f"Error sending data to {self.name}: {e}")

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "even_glasses"
+version = "0.1.11"
+
+authros = [
+    {name = "Emin Genc", email="emingench@gmail.com"}
+]
+description = "A Python package for managing even-realities glasses devices via BLE."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    'bleak>=0.22.3',
+    'pydantic>=2.9.2',
+    'numpy>=1.26.4',
+    'numba>=0.60.0'
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["even_glasses"]
