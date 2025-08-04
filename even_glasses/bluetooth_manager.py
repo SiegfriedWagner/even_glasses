@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from logging import Logger
 
 from bleak import BleakClient, BleakScanner
@@ -18,6 +19,12 @@ from even_glasses.service_identifiers import (
 logging.basicConfig(level=logging.INFO)
 _default_logger = logging.getLogger(__name__)
 
+@dataclass(frozen=True)
+class DiscoveryResult:
+    left_glass_name: str
+    right_glass_name: str
+    left_glass_address: str
+    right_glass_address: str
 
 class BleDevice:
     """Base class for BLE device communication."""
@@ -228,28 +235,33 @@ class GlassesManager:
         return True
 
     @classmethod
-    async def scan_for_glasses(cls, *, timeout: float = 10, logger: Logger = _default_logger) -> tuple[Glass, Glass]:
+    async def scan_for_glasses(cls, *, timeout: float = 10, logger: Logger = _default_logger) -> DiscoveryResult:
         """
         Scan for glasses.
         Throws exception if one of glasses or both are not found.
         """
         devices = await BleakScanner.discover(timeout=timeout)
-        left_glass, right_glass = None, None
+        left_glass, right_glass, left_glass_address, right_glass_address = None, None, None, None
         for device in devices:
             device_name = device.name or "Unknown"
             logger.info(f"Found device: {device_name}, Address: {device.address}")
             if "_L_" in device_name and not left_glass:
-                left_glass = Glass(name=device_name, address=device.address, side="left")
+                left_glass = device.name
+                left_glass_address = device.address
             elif "_R_" in device_name and not right_glass:
-                right_glass = Glass(name=device_name, address=device.address, side="right")
+                right_glass = device.name
+                right_glass_address = device.address
         if not (left_glass and right_glass):
             raise RuntimeError(f"Failed to find both glasses, left glass: {left_glass}, right_glass: {right_glass}")
-        return left_glass, right_glass
+        return DiscoveryResult(left_glass_name=left_glass, right_glass_name=right_glass,
+                               left_glass_address=left_glass_address, right_glass_address=right_glass_address)
 
     async def scan_and_connect(self, timeout: float = 10) -> bool:
         """Scan for glasses devices and connect to them."""
         self._logger.info("Scanning for glasses devices...")
-        self.left_glass, self.right_glass = await self.scan_for_glasses(timeout=timeout, logger=self._logger)
+        result =  await self.scan_for_glasses(timeout=timeout, logger=self._logger)
+        self.left_glass = Glass(result.left_glass_name, result.left_glass_address, 'left')
+        self.right_glass = Glass(result.right_glass_name, result.right_glass_address, 'right')
         await self.connect()
         return True
 
