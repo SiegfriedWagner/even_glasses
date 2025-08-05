@@ -79,6 +79,8 @@ class DashboardState(IntEnum):
     OFF = 0x00
     ON = 0x01
 
+SEND_RESULT_HEADER_LEN = 9
+
 class SendResult(BaseModel):
     command: int = Field(default=Command.SEND_RESULT)
     seq: int = Field(default=0)
@@ -105,7 +107,9 @@ class SendResult(BaseModel):
                 self.max_pages,
             ]
         )
+        assert len(header) == SEND_RESULT_HEADER_LEN
         return header + self.data
+
 
 class NCSNotification(BaseModel):
     msg_id: int = Field(..., alias="msg_id", description="Message ID")

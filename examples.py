@@ -86,16 +86,18 @@ async def test_font(manager: GlassesManager):
     if not manager.left_glass or not manager.right_glass:
         logger.error("Could not connect to glasses devices.")
         return
-    await send_text(manager, "①②③④⑤⑥⑦⑧⑨⑩")
+    await send_text(manager, "①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩①②③④⑤⑥⑦⑧⑨⑩")
+    await asyncio.sleep(2)
+    await send_text(manager, "1234567890\n..........")
     await asyncio.sleep(2)
     await send_text(
         manager, "1┌2┍3┎4┏5┐6┑7┒8┓9└0┕\n1┖2┗3┘4┙5┚6┛7┑8┒9┓0└\n1┕2┖3┗4┘5┙6┚7┛8├9┝0┞\n1┟2┠3┡4┢5┣6┤7┥8┦9┧0┨")
     await asyncio.sleep(2)
-    await send_text(
-        manager, "1┩2┪3┫4┬5┭6┮7┯8┰9┱0┲\n1┳2┴3┵4┶5┷6┸7┹8┺9┻0┼\n1┽2┾3┿4╀5╁6╂7╃8╄9╅0╆\n╇1╈2╉3╊4╋5╌6╍7╎8╏")
-    await asyncio.sleep(2)
-    await send_text(manager, "1═2║3╒4╓5╔6╕7╖8╗9╙0╚\n1╛2╜3╝4╞5╟6╠7╡8╢9╣0╤\n1╥2╦3╧4╨5╩6╪7╫8╬")
-    await asyncio.sleep(2)
+    # await send_text_bis(
+    #     manager, "1┩2┪3┫4┬5┭6┮7┯8┰9┱0┲\n1┳2┴3┵4┶5┷6┸7┹8┺9┻0┼\n1┽2┾3┿4╀5╁6╂7╃8╄9╅0╆\n╇1╈2╉3╊4╋5╌6╍7╎8╏")
+    # await asyncio.sleep(2)
+    # await send_text_bis(manager, "1═2║3╒4╓5╔6╕7╖8╗9╙0╚\n1╛2╜3╝4╞5╟6╠7╡8╢9╣0╤\n1╥2╦3╧4╨5╩6╪7╫8╬")
+    # await asyncio.sleep(2)
 
 async def main():
     args = parse_args()
@@ -110,8 +112,7 @@ async def main():
     config = RSVPConfig(
         words_per_group=args.words_per_group, wpm=args.wpm, padding_char="..."
     )
-
-    manager = GlassesManager(left_address=None, right_address=None)
+    manager = GlassesManager()
     connected = await manager.scan_and_connect()
 
     if connected:

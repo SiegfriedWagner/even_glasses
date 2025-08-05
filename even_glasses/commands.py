@@ -1,5 +1,4 @@
-from turtledemo.penrose import start
-
+from even_glasses import GlassesManager, Command
 from even_glasses.models import (
     SendResult,
     ScreenAction,
@@ -9,7 +8,7 @@ from even_glasses.models import (
     SilentModeStatus,
     BrightnessAuto,
     DashboardState,
-    GlassesWearStatus,
+    GlassesWearStatus, SEND_RESULT_HEADER_LEN,
 )
 import asyncio
 import logging
@@ -87,62 +86,46 @@ async def send_text_packet(
         logging.error("Could not connect to glasses devices.")
         return False
 
-
-async def send_text(manager, text_message: str, duration: float = 5, delay: float = 0.0) -> str:
-    """Send text message to the glasses display."""
-    lines = format_text_lines(text_message)
-    total_pages = (len(lines) + 4) // 5  # 5 lines per page
-
-    if total_pages > 1:
-        logging.info(f"Sending {total_pages} pages with {duration} seconds delay")
-        screen_status = AIStatus.DISPLAYING | ScreenAction.NEW_CONTENT
-        await send_text_packet(
-            manager=manager,
-            text_message=lines[0],
-            page_number=1,
-            max_pages=total_pages,
-            screen_status=screen_status,
-            wait=delay
-        )
-
-    for pn, page in enumerate(range(0, len(lines), 5), start=1):
-        page_lines = lines[page : page + 5]
-
-        # Add vertical centering for pages with fewer than 5 lines
-        if len(page_lines) < 5:
-            padding = (5 - len(page_lines)) // 2
-            page_lines = (
-                [""] * padding + page_lines + [""] * (5 - len(page_lines) - padding)
-            )
-
-        text = "\n".join(page_lines)
+async def send_text(manager: GlassesManager, text_message: str) -> int:
+    """
+    Send text to display.
+    Text is not split into pages, no word wrapping is performed (variable glyph size).
+    It's user responsibility to format input for the display as they wish.
+    Depending on encoded text size it may be sent in single or multiple packets, function returns number of packets sent.
+    """
+    MAX_PACKAGE_LEN = 253
+    MAX_PAYLOAD_LEN = MAX_PACKAGE_LEN - SEND_RESULT_HEADER_LEN
+    left = manager.left_glass
+    right = manager.right_glass
+    if left is None or right is None:
+        raise RuntimeError("Both left and right glasses must be connected")
+    encoded = text_message.encode("utf-8")
+    total_packages = len(encoded) // MAX_PAYLOAD_LEN + 1
+    seq = 0
+    for current_package in range(total_packages):
         screen_status = AIStatus.DISPLAYING
-
-        await send_text_packet(
-            manager=manager,
-            text_message=text,
-            page_number=pn,
-            max_pages=total_pages,
-            screen_status=screen_status,
-            wait=delay
-        )
-
-        # Wait after sending each page except the last one
-        if pn != total_pages:
-            await asyncio.sleep(duration)
-
-    # After all pages, send the last page again with DISPLAY_COMPLETE status
-    screen_status = AIStatus.DISPLAY_COMPLETE
-    await send_text_packet(
-        manager=manager,
-        text_message=text,
-        page_number=total_pages,
-        max_pages=total_pages,
+        if current_package == 0:
+            screen_status |= ScreenAction.NEW_CONTENT
+        if current_package == total_packages - 1:
+            screen_status |= AIStatus.DISPLAY_COMPLETE
+        data = encoded[current_package * MAX_PAYLOAD_LEN : (current_package + 1) * MAX_PAYLOAD_LEN]
+        buffer = SendResult(
+        command=Command.SEND_RESULT,  # Text command
+        seq=seq,
+        total_packages=total_packages,
+        current_package=current_package,
         screen_status=screen_status,
-        wait=delay
-    )
-    return text_message
-
+        new_char_pos0=0,
+        new_char_pos1=0,
+        page_number=0,
+        max_pages=1,
+        data=data
+        ).build()
+        # Send to the left glass and wait for acknowledgment
+        await manager.left_glass.send(buffer)
+        # Send to the right glass and wait for acknowledgment
+        await manager.right_glass.send(buffer)
+    return total_packages
 
 def group_words(words: List[str], config: RSVPConfig) -> List[str]:
     """Group words according to configuration"""
