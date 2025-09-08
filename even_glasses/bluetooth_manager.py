@@ -1,12 +1,13 @@
 import asyncio
 import logging
+import re
 import time
 from dataclasses import dataclass
 from logging import Logger
 
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
-from typing import Optional, Callable, Coroutine
+from typing import Dict, List, Optional, Callable, Coroutine
 from even_glasses.models import DesiredConnectionState
 
 from even_glasses.utils import construct_heartbeat
@@ -19,12 +20,14 @@ from even_glasses.service_identifiers import (
 logging.basicConfig(level=logging.INFO)
 _default_logger = logging.getLogger(__name__)
 
+
 @dataclass(frozen=True)
 class DiscoveryResult:
     left_glass_name: str
     right_glass_name: str
     left_glass_address: str
     right_glass_address: str
+
 
 class BleDevice:
     """Base class for BLE device communication."""
@@ -60,7 +63,9 @@ class BleDevice:
             self.uart_rx = uart_service.get_characteristic(UART_RX_CHAR_UUID)
 
             if not self.uart_tx or not self.uart_rx:
-                raise BleakError(f"UART TX/RX characteristics not found for {self.name}")
+                raise BleakError(
+                    f"UART TX/RX characteristics not found for {self.name}"
+                )
 
             await self.start_notifications()
         except Exception as e:
@@ -79,7 +84,9 @@ class BleDevice:
                     await self.client.stop_notify(self.uart_rx)
                     self._logger.info(f"Stopped notifications for {self.name}")
                 except Exception as e:
-                    self._logger.warning(f"Failed to stop notifications for {self.name}: {e}")
+                    self._logger.warning(
+                        f"Failed to stop notifications for {self.name}: {e}"
+                    )
                     exceptions.append(e)
                 finally:
                     self.notifications_started = False
@@ -94,7 +101,9 @@ class BleDevice:
         if len(exceptions) == 1:
             raise exceptions[0]
         elif len(exceptions) > 1:
-            raise ExceptionGroup("During BleDevice disconnect exceptions occurred.", exceptions)
+            raise ExceptionGroup(
+                "During BleDevice disconnect exceptions occurred.", exceptions
+            )
 
     def _handle_disconnection(self, client: BleakClient):
         self._logger.warning(f"Device {self.name} disconnected")
@@ -105,14 +114,18 @@ class BleDevice:
         retries = 3
         for attempt in range(1, retries + 1):
             try:
-                self._logger.info(f"Reconnecting to {self.name} (Attempt {attempt}/{retries})")
+                self._logger.info(
+                    f"Reconnecting to {self.name} (Attempt {attempt}/{retries})"
+                )
                 await self.connect()
                 self._logger.info(f"Reconnected to {self.name}")
                 return
             except Exception as e:
                 self._logger.error(f"Reconnection attempt {attempt} failed: {e}")
                 await asyncio.sleep(5)
-        self._logger.error(f"Failed to reconnect to {self.name} after {retries} attempts")
+        self._logger.error(
+            f"Failed to reconnect to {self.name} after {retries} attempts"
+        )
 
     async def start_notifications(self):
         if not self.notifications_started and self.uart_rx:
@@ -121,7 +134,9 @@ class BleDevice:
                 self.notifications_started = True
                 self._logger.info(f"Notifications started for {self.name}")
             except Exception as e:
-                self._logger.error(f"Failed to start notifications for {self.name}: {e}")
+                self._logger.error(
+                    f"Failed to start notifications for {self.name}: {e}"
+                )
 
     async def send(self, data: bytes) -> bool:
         start = time.perf_counter()
@@ -133,19 +148,22 @@ class BleDevice:
             self._logger.warning(f"No TX characteristic available for {self.name}.")
             return False
         if len(data) > 253:
-            raise ValueError("Message too long, payload must be at most 253 bytes long.")
+            raise ValueError(
+                "Message too long, payload must be at most 253 bytes long."
+            )
 
         try:
             async with self._write_lock:
                 await self.client.write_gatt_char(self.uart_tx, data, response=True)
-            self._logger.info(f"Data sent to {self.name}, took {time.perf_counter() - start}[s], data[{len(data)}]: {data.hex()}")
+            self._logger.info(
+                f"Data sent to {self.name}, took {time.perf_counter() - start}[s], data[{len(data)}]: {data.hex()}"
+            )
             return True
         except Exception as e:
             self._logger.error(f"Error sending data to {self.name}: {e}")
             return False
 
-    async def handle_notification(self, sender: int, data: bytes):
-        ...
+    async def handle_notification(self, sender: int, data: bytes): ...
 
 
 class Glass(BleDevice):
@@ -162,8 +180,9 @@ class Glass(BleDevice):
         self.side = side
         self.heartbeat_freq = heartbeat_freq
         self.heartbeat_task: Optional[asyncio.Task] = None
-        self.notification_handler: Optional[Callable[['Glass', int, bytes], Coroutine]] = None
-        
+        self.notification_handler: Optional[
+            Callable[["Glass", int, bytes], Coroutine]
+        ] = None
 
     async def start_heartbeat(self):
         if self.heartbeat_task is None or self.heartbeat_task.done():
@@ -191,15 +210,16 @@ class Glass(BleDevice):
             except asyncio.CancelledError:
                 pass
         await super().disconnect(throw_exceptions)
-    
+
     async def handle_notification(self, sender: int, data: bytes):
         self._logger.info(f"Notification from {self.name}: {data.hex()}")
         if self.notification_handler:
-            await self.notification_handler(self,sender, data)
+            await self.notification_handler(self, sender, data)
 
 
 class GlassesManager:
     """Class to manage both left and right glasses."""
+
     # TODO: Maybe refactor this class into something that locks glasses after connection
     # TODO: and block changing internal state by external actors util internally managed resources are closed (connections are disconnected)
 
@@ -209,7 +229,7 @@ class GlassesManager:
         right_address: str = None,
         left_name: str = "G1 Left Glass",
         right_name: str = "G1 Right Glass",
-        logger: Logger = _default_logger
+        logger: Logger = _default_logger,
     ):
         self._logger = logger
         self.left_glass: Optional[Glass] = (
@@ -224,44 +244,105 @@ class GlassesManager:
         )
         self.desired_connection_state = DesiredConnectionState.DISCONNECTED
 
+    def configure(self, glasses: DiscoveryResult):
+        self.left_glass = Glass(
+            glasses.left_glass_name, glasses.left_glass_address, "left"
+        )
+        self.right_glass = Glass(
+            glasses.right_glass_name, glasses.right_glass_address, "right"
+        )
+
     async def connect(self):
         if not self.left_glass:
-            raise RuntimeError("Left glass is not configured. Reconstruct the object with predefined connection or call 'scan_and_connect'.")
+            raise RuntimeError(
+                "Left glass is not configured. Reconstruct the object with predefined connection or call 'scan_and_connect'."
+            )
         if not self.right_glass:
-            raise RuntimeError("Right glass is not configured. Reconstruct the object with predefined connection or call 'scan_and_connect'.")
+            raise RuntimeError(
+                "Right glass is not configured. Reconstruct the object with predefined connection or call 'scan_and_connect'."
+            )
         await self.left_glass.connect()
         await self.right_glass.connect()
         self.desired_connection_state = DesiredConnectionState.CONNECTED
         return True
 
     @classmethod
-    async def scan_for_glasses(cls, *, timeout: float = 10, logger: Logger = _default_logger) -> DiscoveryResult:
+    async def scan_for_glasses(
+        cls, *, timeout: float = 10, logger: Logger = _default_logger
+    ) -> List[DiscoveryResult]:
         """
         Scan for glasses.
         Throws exception if one of glasses or both are not found.
         """
+        name_re = re.compile(r"^(?P<prefix>Even.*?)[_ ](?P<side>[LR])[_ ](?P<rest>.+)$")
+
         devices = await BleakScanner.discover(timeout=timeout)
-        left_glass, right_glass, left_glass_address, right_glass_address = None, None, None, None
+
+        logger.info(f"Scan BLE finished. Found {len(devices)} devices.")
+
+        grouped: Dict[str, Dict[str, Optional[tuple]]] = {}
+
         for device in devices:
             device_name = device.name or "Unknown"
-            logger.info(f"Found device: {device_name}, Address: {device.address}")
-            if "_L_" in device_name and not left_glass:
-                left_glass = device.name
-                left_glass_address = device.address
-            elif "_R_" in device_name and not right_glass:
-                right_glass = device.name
-                right_glass_address = device.address
-        if not (left_glass and right_glass):
-            raise RuntimeError(f"Failed to find both glasses, left glass: {left_glass}, right_glass: {right_glass}")
-        return DiscoveryResult(left_glass_name=left_glass, right_glass_name=right_glass,
-                               left_glass_address=left_glass_address, right_glass_address=right_glass_address)
+            device_addr = getattr(device, "address", None)
+            logger.info(f"Found device: {device_name}, Address: {device_addr}")
+
+            if "even" not in device_name.lower():
+                continue
+
+            match = name_re.match(device_name)
+            if not match:
+                continue
+
+            prefix = match.group("prefix").strip()
+            side = match.group("side").upper()
+
+            if prefix not in grouped:
+                grouped[prefix] = {"L": None, "R": None}
+
+            if grouped[prefix][side] is None:
+                grouped[prefix][side] = (device_name, device_addr)
+            else:
+                logger.warning(f"Duplicated side {side} for '{prefix}': {device_name}")
+
+        results: List[DiscoveryResult] = []
+        for prefix, sides in grouped.items():
+            left = sides.get("L")
+            right = sides.get("R")
+            if left and right:
+                results.append(
+                    DiscoveryResult(
+                        left_glass_name=left[0],
+                        right_glass_name=right[0],
+                        left_glass_address=left[1],
+                        right_glass_address=right[1],
+                    )
+                )
+            else:
+                logger.warning(
+                    f"Incomplete pair for '{prefix}': L={bool(left)}, R={bool(right)}"
+                )
+
+        results.sort(
+            key=lambda r: (
+                r.left_glass_name.split("_L_")[0]
+                if "_L_" in r.left_glass_name
+                else r.left_glass_name
+            )
+        )
+
+        return results
 
     async def scan_and_connect(self, timeout: float = 10) -> bool:
-        """Scan for glasses devices and connect to them."""
+        """Scan for Even glasses devices and connect to the first one from the list."""
         self._logger.info("Scanning for glasses devices...")
-        result =  await self.scan_for_glasses(timeout=timeout, logger=self._logger)
-        self.left_glass = Glass(result.left_glass_name, result.left_glass_address, 'left')
-        self.right_glass = Glass(result.right_glass_name, result.right_glass_address, 'right')
+        results = await self.scan_for_glasses(timeout=timeout, logger=self._logger)
+        self.left_glass = Glass(
+            results[0].left_glass_name, results[0].left_glass_address, "left"
+        )
+        self.right_glass = Glass(
+            results[0].right_glass_name, results[0].right_glass_address, "right"
+        )
         await self.connect()
         return True
 
@@ -284,12 +365,28 @@ class GlassesManager:
                 exceptions.append(e)
             self._logger.info("Disconnected right glass.")
         if throw_exceptions and len(exceptions) > 0:
-            raise ExceptionGroup("When disconnecting glasses errors occurred.", exceptions)
+            raise ExceptionGroup(
+                "When disconnecting glasses errors occurred.", exceptions
+            )
+
 
 # Example Usage
 async def main():
     manager = GlassesManager()
-    connected = await manager.scan_and_connect()
+    devices = await manager.scan_for_glasses()
+
+    for i, r in enumerate(devices, 1):
+        print(
+            f"[{i}] L: {r.left_glass_name} ({r.left_glass_address}) | "
+            f"R: {r.right_glass_name} ({r.right_glass_address})"
+        )
+
+    if len(devices) == 0:
+        _default_logger.warning("Not found any devices")
+        return
+
+    manager.configure(devices[0])
+    connected = await manager.connect()
     if connected:
         try:
             while True:
