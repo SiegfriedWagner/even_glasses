@@ -1,32 +1,35 @@
-from even_glasses import GlassesManager, Command
-from even_glasses.models import (
-    SendResult,
-    ScreenAction,
-    AIStatus,
-    RSVPConfig,
-    NCSNotification,
-    SilentModeStatus,
-    BrightnessAuto,
-    DashboardState,
-    GlassesWearStatus, SEND_RESULT_HEADER_LEN,
-)
 import asyncio
 import logging
 from typing import List
+
+import numpy as np
+
+from even_glasses import Command, GlassesManager
+from even_glasses.models import (
+    SEND_RESULT_HEADER_LEN,
+    AIStatus,
+    BrightnessAuto,
+    DashboardState,
+    GlassesWearStatus,
+    NCSNotification,
+    RSVPConfig,
+    ScreenAction,
+    SendResult,
+    SilentModeStatus,
+)
 from even_glasses.utils import (
-    construct_note_add,
-    construct_silent_mode,
+    construct_bmp_data_packet,
     construct_brightness,
     construct_dashboard_show_state,
+    construct_glasses_wear_command,
     construct_headup_angle,
+    construct_note_add,
     construct_note_delete,
     construct_notification,
-    construct_glasses_wear_command,
+    construct_silent_mode,
     divide_image_data,
-    construct_bmp_data_packet,
     send_data_to_glass,
 )
-import numpy as np
 
 
 def format_text_lines(text: str) -> list:
@@ -86,7 +89,7 @@ async def send_text_packet(
         logging.error("Could not connect to glasses devices.")
         return False
 
-async def send_text(manager: GlassesManager, text_message: str) -> int:
+async def send_text(manager: GlassesManager, text_message: str, is_single_eye_mode: bool) -> int:
     """
     Send text to display.
     Text is not split into pages, no word wrapping is performed (variable glyph size).
@@ -121,8 +124,9 @@ async def send_text(manager: GlassesManager, text_message: str) -> int:
         max_pages=1,
         data=data
         ).build()
-        # Send to the left glass and wait for acknowledgment
-        await manager.left_glass.send(buffer)
+        if not is_single_eye_mode:
+            # Send to the left glass and wait for acknowledgment
+            await manager.left_glass.send(buffer)
         # Send to the right glass and wait for acknowledgment
         await manager.right_glass.send(buffer)
     return total_packages
