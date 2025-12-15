@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "even_glasses"
-version = "0.1.11"
+version = "0.2.0"
 
 authros = [
     {name = "Emin Genc", email="emingench@gmail.com"}
